@@ -30,7 +30,7 @@ $ curl -X POST "http://localhost:8000/query" \
   -d '{
     "user_id": "user_1",
     "chat_id": "chat_1",
-    "query": "fast api 란?",
-    "selected_doc_title": "FastAPI 소개"
+    "query": "chunk 란?",
+    "selected_doc_title": "Test Title"
   }'
 ```

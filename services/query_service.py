@@ -15,29 +15,35 @@ def _build_messages(
 ) -> List[Dict[str, str]]:
     """
     OpenAI 스타일의 messages 생성.
-    history는 이미 오래된->최신 순이라 가정.
+    history는 오래된->최신 순이라 가정.
     similar_docs가 있으면 system/context 메시지로 추가.
     """
     messages: List[Dict[str, str]] = []
 
-    # 선택 문서 컨텍스트
+    # 선택 문서 컨텍스트 추가
     if similar_docs:
-        context_lines = ["You are a helpful assistant. Use the provided documents when relevant.",
-                         "Similar documents:"]
+        context_lines = [
+            "You are a helpful assistant. Use the provided documents when relevant.",
+            "Similar documents:",
+        ]
         for i, d in enumerate(similar_docs, 1):
-            line = f"{i}. {d.get('title', '')}\n   {d.get('snippet', '')}"
+            content_preview = d.get("content", "")
+            if len(content_preview) > 200:
+                content_preview = content_preview[:200] + "..."
+            line = f"{i}. {d.get('title', '')}\n   {content_preview}"
             if d.get("url"):
                 line += f"\n   URL: {d['url']}"
             context_lines.append(line)
         messages.append({"role": "system", "content": "\n".join(context_lines)})
 
-    # 기존 히스토리
+    # 기존 히스토리 추가
     for h in history:
-        role = h.get("role", "user")
-        content = h.get("content", "")
-        messages.append({"role": role, "content": content})
+        messages.append({
+            "role": h.get("role", "user"),
+            "content": h.get("content", ""),
+        })
 
-    # 현재 사용자 문의
+    # 현재 사용자 문의 추가
     messages.append({"role": "user", "content": user_query})
     return messages
 
@@ -83,11 +89,11 @@ def execute_query(request: QueryRequest) -> QueryResponse:
 
     # 1) 히스토리
     history = get_history(user_id=user_id, chat_id=chat_id, limit=settings.HISTORY_MAX)
-    print(history)
     # 2) 유사 문서
     similar_docs = None
     if selected_doc_title:
         similar_docs = fetch_similar_docs(selected_doc_title, query)
+        print('similar_docs', similar_docs)
 
     # 3) LLM 요청 메시지 구성 및 호출
     messages = _build_messages(history=history, user_query=query, similar_docs=similar_docs)

@@ -15,7 +15,7 @@ class Settings:
     POSTGRES_DSN: str = os.getenv("POSTGRES_DSN", "postgresql://postgres:postgres@127.0.0.1:5432/postgres")
 
     # 외부 서비스
-    RAG_SERVICE_URL: str = os.getenv("RAG_SERVICE_URL", "http://localhost:8081")
+    RAG_SERVICE_URL: str = os.getenv("RAG_SERVICE_URL", "http://localhost:8001")
     LLM_SERVICE_URL: str = os.getenv("LLM_SERVICE_URL", "http://localhost:8888")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "mock-llm")
 
