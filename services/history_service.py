@@ -1,20 +1,16 @@
 import json
 from typing import List, TypedDict
-
 import redis
 import psycopg
 from psycopg.rows import dict_row
-
 from config.settings import settings
 
-
-# ----- 설정 -----
-TABLE_NAME = "chats"  # 실제 테이블명이 다르면 여기만 변경하세요.
+TABLE_NAME = "chats"
 
 
 class HistoryItem(TypedDict):
-    role: str          # "user" | "assistant" | "system"
-    content: str       # message 컬럼에서 읽어온 값 (본문)
+    role: str
+    content: str
 
 
 _redis_client: redis.Redis | None = None
@@ -36,32 +32,21 @@ def _get_pg() -> psycopg.Connection:
 
 
 def _redis_key(user_id: str, chat_id: str) -> str:
-    # 요청하신 포맷
     return f"chat-history:user_{user_id}:{chat_id}"
 
 
 def get_history(user_id: str, chat_id: str, limit: int | None = None) -> List[HistoryItem]:
-    """
-    1) Redis 히트 시: 반환
-    2) 미스 시: Postgres 조회 -> Redis 캐싱 -> 반환
-    반환 형식: 오래된 순(chronological)
-    """
+    """Redis list에서 최근 메시지를 오래된 순으로 가져오기"""
     if limit is None:
         limit = settings.HISTORY_MAX
 
     r = _get_redis()
     key = _redis_key(user_id, chat_id)
-    cached = r.get(key)
-    if cached:
-        try:
-            items: List[HistoryItem] = json.loads(cached)
-            # Redis에는 오래된->최신 순으로 저장해두므로 마지막 limit만 슬라이스
-            return items[-limit:]
-        except json.JSONDecodeError:
-            # 캐시 깨졌으면 삭제하고 DB 조회
-            r.delete(key)
+    data = r.lrange(key, -limit, -1)  # 최신 limit개
+    if data:
+        return [json.loads(x) for x in data]
 
-    # DB 조회 (최신 -> 오래된 LIMIT 후 역순으로 변환)
+    # 캐시에 없으면 DB에서 불러오기
     conn = _get_pg()
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
@@ -69,59 +54,51 @@ def get_history(user_id: str, chat_id: str, limit: int | None = None) -> List[Hi
             SELECT role, message AS content
             FROM {TABLE_NAME}
             WHERE user_id = %s AND chat_id = %s
-            ORDER BY created_time DESC
+            ORDER BY created_time ASC
             LIMIT %s
             """,
             (user_id, chat_id, limit),
         )
         rows = cur.fetchall()
 
-    items: List[HistoryItem] = [
-        {"role": row["role"], "content": row["content"]}
-        for row in rows
-    ]
-    # 오래된 순으로 정렬 (created_time DESC로 뽑았으니 역순)
-    items.reverse()
+    items = [{"role": row["role"], "content": row["content"]} for row in rows]
 
-    # Redis 캐싱 (오래된->최신 순 리스트 그대로 저장)
-    try:
-        r.set(key, json.dumps(items), ex=settings.REDIS_TTL_SECONDS)
-    except Exception:
-        pass
+    # Redis에 다시 채워넣기
+    if items:
+        with r.pipeline() as pipe:
+            for item in items:
+                pipe.rpush(key, json.dumps(item, ensure_ascii=False))
+            pipe.expire(key, settings.REDIS_TTL_SECONDS)
+            pipe.execute()
 
     return items
 
-
 def append_history(user_id: str, chat_id: str, role: str, content: str) -> None:
-    """
-    신규 메시지를 DB에 적재하고 Redis 캐시도 최신화(있으면) 합니다.
-    - PostgreSQL 컬럼: user_id, chat_id, message, role, created_time
-    - Redis value: [{"role":..., "content":...}, ...] (오래된->최신 순)
-    """
     conn = _get_pg()
     with conn.cursor() as cur:
-        # created_time은 DB default(now())라 가정
+        cur.execute(
+            f"SELECT title FROM {TABLE_NAME} WHERE user_id=%s AND chat_id=%s LIMIT 1",
+            (user_id, chat_id),
+        )
+        row = cur.fetchone()
+        title = row[0] if row and row[0] else (content[:2] if content else "채팅")
+
         cur.execute(
             f"""
-            INSERT INTO {TABLE_NAME} (user_id, chat_id, message, role)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO {TABLE_NAME} (user_id, chat_id, title, message, role)
+            VALUES (%s, %s, %s, %s, %s)
             """,
-            (user_id, chat_id, content, role),
+            (user_id, chat_id, title, content, role),
         )
         conn.commit()
 
-    # 캐시 갱신 (있으면)
+    # Redis에 list로 추가
     r = _get_redis()
     key = _redis_key(user_id, chat_id)
-    cached = r.get(key)
-    if cached:
-        try:
-            items: List[HistoryItem] = json.loads(cached)
-        except json.JSONDecodeError:
-            items = []
-        # 최신 메시지를 맨 뒤에 추가 (오래된->최신 순 유지)
-        items.append({"role": role, "content": content})
-        # 최대 길이 유지
-        if len(items) > settings.HISTORY_MAX:
-            items = items[-settings.HISTORY_MAX:]
-        r.set(key, json.dumps(items), ex=settings.REDIS_TTL_SECONDS)
+
+    with r.pipeline() as pipe:
+        pipe.rpush(key, json.dumps({"role": role, "content": content}, ensure_ascii=False))
+        pipe.ltrim(key, -settings.HISTORY_MAX, -1)
+        pipe.expire(key, settings.REDIS_TTL_SECONDS)
+        pipe.execute()
+

@@ -8,11 +8,11 @@ class Settings:
 
     # Redis (단일 마스터 접속; sentinel 쓰려면 별도 코드 필요)
     # 컨테이너 내부에서 접속 시: redis-master:6379
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://redis-master:6379/0")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://:redis@127.0.0.1:6379/0")
 
     # Postgres DSN (psycopg v3)
     # 컨테이너 내부에서 접속 시: postgres:5432 / 외부 접속 시: ip:5432
-    POSTGRES_DSN: str = os.getenv("POSTGRES_DSN", "postgresql://user:password@postgres:5432/appdb")
+    POSTGRES_DSN: str = os.getenv("POSTGRES_DSN", "postgresql://postgres:postgres@127.0.0.1:5432/postgres")
 
     # 외부 서비스
     RAG_SERVICE_URL: str = os.getenv("RAG_SERVICE_URL", "http://localhost:8081")

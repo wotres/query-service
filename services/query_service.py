@@ -52,8 +52,6 @@ def _call_llm(messages: List[Dict[str, str]]) -> str:
     url = f"{settings.LLM_SERVICE_URL}/v1/chat/completions"
     payload = {"model": settings.LLM_MODEL, "messages": messages}
     headers = {}
-    if settings.LLM_API_KEY:
-        headers["Authorization"] = f"Bearer {settings.LLM_API_KEY}"
 
     timeout = settings.REQUEST_TIMEOUT_SECONDS
 
@@ -85,7 +83,7 @@ def execute_query(request: QueryRequest) -> QueryResponse:
 
     # 1) 히스토리
     history = get_history(user_id=user_id, chat_id=chat_id, limit=settings.HISTORY_MAX)
-
+    print(history)
     # 2) 유사 문서
     similar_docs = None
     if selected_doc_title:
@@ -94,12 +92,14 @@ def execute_query(request: QueryRequest) -> QueryResponse:
     # 3) LLM 요청 메시지 구성 및 호출
     messages = _build_messages(history=history, user_query=query, similar_docs=similar_docs)
     answer = _call_llm(messages)
-
+    print(messages)
+    print(answer)
     # 4) 대화 기록에 현재 user/assistant 턴 적재
     try:
         append_history(user_id, chat_id, role="user", content=query)
         append_history(user_id, chat_id, role="assistant", content=answer)
-    except Exception:
+    except Exception as e:
+        print("대화 기록 저장 실패:", e)
         # 저장 실패는 응답 생성에는 영향을 주지 않음
         pass
 
