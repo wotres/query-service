@@ -75,30 +75,42 @@ def get_history(user_id: str, chat_id: str, limit: int | None = None) -> List[Hi
 
 def append_history(user_id: str, chat_id: str, role: str, content: str) -> None:
     conn = _get_pg()
-    with conn.cursor() as cur:
-        cur.execute(
-            f"SELECT title FROM {TABLE_NAME} WHERE user_id=%s AND chat_id=%s LIMIT 1",
-            (user_id, chat_id),
-        )
-        row = cur.fetchone()
-        title = row[0] if row and row[0] else (content[:2] if content else "채팅")
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT title FROM {TABLE_NAME} WHERE user_id=%s AND chat_id=%s LIMIT 1",
+                (user_id, chat_id),
+            )
+            row = cur.fetchone()
+            title = row[0] if row and row[0] else (content[:20] if content else "채팅")
 
-        cur.execute(
-            f"""
-            INSERT INTO {TABLE_NAME} (user_id, chat_id, title, message, role)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (user_id, chat_id, title, content, role),
-        )
+            cur.execute(
+                f"""
+                INSERT INTO {TABLE_NAME} (user_id, chat_id, title, message, role)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (user_id, chat_id, title, content, role),
+            )
         conn.commit()
 
+    except Exception as e:
+        conn.rollback()  # 🔥 중요: 실패하면 트랜잭션 되돌림
+        print(f"[DB ERROR] append_history failed: {e}")
+        raise
+
+    finally:
+        conn.close()
+
     # Redis에 list로 추가
-    r = _get_redis()
-    key = _redis_key(user_id, chat_id)
+    try:
+        r = _get_redis()
+        key = _redis_key(user_id, chat_id)
 
-    with r.pipeline() as pipe:
-        pipe.rpush(key, json.dumps({"role": role, "content": content}, ensure_ascii=False))
-        pipe.ltrim(key, -settings.HISTORY_MAX, -1)
-        pipe.expire(key, settings.REDIS_TTL_SECONDS)
-        pipe.execute()
+        with r.pipeline() as pipe:
+            pipe.rpush(key, json.dumps({"role": role, "content": content}, ensure_ascii=False))
+            pipe.ltrim(key, -settings.HISTORY_MAX, -1)
+            pipe.expire(key, settings.REDIS_TTL_SECONDS)
+            pipe.execute()
 
+    except Exception as e:
+        print(f"[Redis ERROR] append_history cache save failed: {e}")
