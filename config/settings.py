@@ -3,8 +3,8 @@ import os
 
 class Settings:
     # 기본 동작
-    HISTORY_MAX: int = os.getenv("HISTORY_MAX", 10)
-    REDIS_TTL_SECONDS: int = os.getenv("REDIS_TTL_SECONDS", 3600)
+    HISTORY_MAX: int = int(os.getenv("HISTORY_MAX", 10))
+    REDIS_TTL_SECONDS: int = int(os.getenv("REDIS_TTL_SECONDS", 3600))
 
     # Redis (단일 마스터 접속; sentinel 쓰려면 별도 코드 필요)
     # 컨테이너 내부에서 접속 시: redis-master:6379
@@ -19,7 +19,7 @@ class Settings:
     LLM_SERVICE_URL: str = os.getenv("LLM_SERVICE_URL", "http://localhost:8888")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "mock-llm")
 
-    REQUEST_TIMEOUT_SECONDS: int = os.getenv("REQUEST_TIMEOUT_SECONDS", 15)
+    REQUEST_TIMEOUT_SECONDS: int = int(os.getenv("REQUEST_TIMEOUT_SECONDS", 15))
 
     class Config:
         env_file = ".env"

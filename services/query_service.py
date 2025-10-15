@@ -91,13 +91,17 @@ def execute_query(request: QueryRequest) -> QueryResponse:
     history = get_history(user_id=user_id, chat_id=chat_id, limit=settings.HISTORY_MAX)
     # 2) 유사 문서
     similar_docs = None
+    rag_fall_back = False
     if selected_doc_title:
-        similar_docs = fetch_similar_docs(selected_doc_title, query)
+        similar_docs, rag_fall_back = fetch_similar_docs(selected_doc_title, query)
         print('similar_docs', similar_docs)
 
     # 3) LLM 요청 메시지 구성 및 호출
     messages = _build_messages(history=history, user_query=query, similar_docs=similar_docs)
     answer = _call_llm(messages)
+    if rag_fall_back:
+        answer = "[RAG 서비스 오류로 인해 유사 문서 없이 답변이 생성되었습니다.]\n\n" + answer
+
     print(messages)
     print(answer)
     # 4) 대화 기록에 현재 user/assistant 턴 적재

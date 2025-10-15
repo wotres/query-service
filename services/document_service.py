@@ -50,8 +50,8 @@ def fetch_similar_docs(selected_doc_title: str, query: str) -> List[SimilarDoc]:
 
                 out.append({"title": title, "content": content, "distance": distance})
 
-            return out
+            return out, False  # 정상 동작
 
     except Exception:
         # 실패 시 빈 리스트로 폴백
-        return []
+        return [], True
